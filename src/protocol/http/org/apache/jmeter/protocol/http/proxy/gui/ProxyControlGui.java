@@ -915,6 +915,8 @@ public class ProxyControlGui extends LogicControllerGui implements JMeterGUIComp
 
     private void buildNodesModel(JMeterTreeNode node, String parent_name, int level) {
         String separator = " > ";
+        if (level > 7) 
+        	return;
         if (node != null) {
             for (int i = 0; i < node.getChildCount(); i++) {
                 StringBuilder name = new StringBuilder();

@@ -77,6 +77,9 @@ public class ReplaceFunctionsWithStrings extends AbstractTransformer {
         for(Entry<String, String> entry : getVariables().entrySet()){
             String key = entry.getKey();
             String value = entry.getValue();
+            if(value.length() < 4){
+                continue;
+            }
             if (regexMatch) {
                 try {
                     pattern = compiler.compile("\\b("+value+")\\b");

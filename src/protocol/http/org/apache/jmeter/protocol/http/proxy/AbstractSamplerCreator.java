@@ -142,4 +142,9 @@ public abstract class AbstractSamplerCreator implements SamplerCreator {
         populateSampler(sampler, request, pageEncodings, formEncodings);
         return sampler;
     }
+    
+    @Override
+    public boolean isPreferrable() {
+    	return false;
+    }
 }

@@ -28,9 +28,11 @@ import java.security.GeneralSecurityException;
 import java.security.KeyStore;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.X509Certificate;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
 import java.util.Enumeration;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -40,6 +42,7 @@ import java.util.prefs.Preferences;
 
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.commons.lang3.time.DateUtils;
 import org.apache.http.conn.ssl.AbstractVerifier;
@@ -58,6 +61,7 @@ import org.apache.jmeter.functions.InvalidVariableException;
 import org.apache.jmeter.gui.GuiPackage;
 import org.apache.jmeter.gui.tree.JMeterTreeModel;
 import org.apache.jmeter.gui.tree.JMeterTreeNode;
+import org.apache.jmeter.protocol.http.control.Header;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
 import org.apache.jmeter.protocol.http.control.RecordingController;
 import org.apache.jmeter.protocol.http.gui.HeaderPanel;
@@ -67,6 +71,7 @@ import org.apache.jmeter.protocol.http.sampler.HTTPSamplerFactory;
 import org.apache.jmeter.samplers.SampleEvent;
 import org.apache.jmeter.samplers.SampleListener;
 import org.apache.jmeter.samplers.SampleResult;
+import org.apache.jmeter.testelement.AbstractTestElement;
 import org.apache.jmeter.testelement.TestElement;
 import org.apache.jmeter.testelement.TestPlan;
 import org.apache.jmeter.testelement.TestStateListener;
@@ -242,7 +247,7 @@ public class ProxyControl extends GenericController {
 
     private transient Daemon server;
 
-    private long lastTime = 0;// When was the last sample seen?
+    private volatile long lastTime = 0;// When was the last sample seen?
 
     private transient KeyStore keyStore;
 
@@ -545,6 +550,15 @@ public class ProxyControl extends GenericController {
                 Collection<Arguments> userDefinedVariables = (Collection<Arguments>) findApplicableElements(myTarget, Arguments.class, true);
 
                 removeValuesFromSampler(sampler, defaultConfigurations);
+                for (int i = 0; subConfigs != null && i < subConfigs.length; i++) {
+                    if (subConfigs[i] instanceof HeaderManager) {
+                        final HeaderManager headerManager = (HeaderManager)subConfigs[i];
+                        removeHeadersByDefaults(headerManager, defaultConfigurations);
+                        if(headerManager.getHeaders().size()==0){
+                        	subConfigs[i] = null;
+                        }
+                    }
+                }
                 replaceValues(sampler, subConfigs, userDefinedVariables);
                 sampler.setAutoRedirects(samplerRedirectAutomatically);
                 sampler.setFollowRedirects(samplerFollowRedirects);
@@ -972,25 +986,32 @@ public class ProxyControl extends GenericController {
 
             boolean firstInBatch = false;
             long now = System.currentTimeMillis();
-            long deltaT = now - lastTime;
             int cachedGroupingMode = groupingMode;
-            if (deltaT > sampleGap) {
-                if (!myTarget.isLeaf() && cachedGroupingMode == GROUPING_ADD_SEPARATORS) {
-                    addDivider(treeModel, myTarget);
-                }
-                if (cachedGroupingMode == GROUPING_IN_SIMPLE_CONTROLLERS) {
-                    addSimpleController(treeModel, myTarget, sampler.getName());
-                }
-                if (cachedGroupingMode == GROUPING_IN_TRANSACTION_CONTROLLERS) {
-                    addTransactionController(treeModel, myTarget, sampler.getName());
-                }
-                firstInBatch = true;// Remember this was first in its batch
+            long deltaT;
+            synchronized(ProxyControl.class){
+	            deltaT = now - lastTime;            
+	            if (deltaT > sampleGap) {
+	                if (!myTarget.isLeaf() && cachedGroupingMode == GROUPING_ADD_SEPARATORS) {
+	                    addDivider(treeModel, myTarget);
+	                }
+	                if (cachedGroupingMode == GROUPING_IN_SIMPLE_CONTROLLERS) {
+	                    addSimpleController(treeModel, myTarget, sampler.getName());
+	                }
+	                if (cachedGroupingMode == GROUPING_IN_TRANSACTION_CONTROLLERS) {
+	                    log.info("HC:" + this.hashCode());
+	                    log.info("NOW:" + now);
+	                    log.info("LT:" + lastTime);
+	                    log.info(sampler.getName());
+	                	addTransactionController(treeModel, myTarget, sampler.getName());
+	                }
+	                firstInBatch = true;// Remember this was first in its batch
+	            }
+	            if (lastTime == 0) {
+	                deltaT = 0; // Decent value for timers
+	            }
+	            lastTime = now;
             }
-            if (lastTime == 0) {
-                deltaT = 0; // Decent value for timers
-            }
-            lastTime = now;
-
+            
             if (cachedGroupingMode == GROUPING_STORE_FIRST_ONLY) {
                 if (!firstInBatch) {
                     return; // Huh! don't store this one!
@@ -1017,11 +1038,26 @@ public class ProxyControl extends GenericController {
             final long deltaTFinal = deltaT;
             final boolean firstInBatchFinal = firstInBatch;
             final JMeterTreeNode myTargetFinal = myTarget;
+            
             JMeterUtils.runSafe(new Runnable() {
                 @Override
                 public void run() {
                     try {
-                        final JMeterTreeNode newNode = treeModel.addComponent(sampler, myTargetFinal);
+                    	final JMeterTreeNode newNode = treeModel.addComponent(sampler, myTargetFinal);
+                        
+                    	int position = newNode.getParent().getIndex(newNode) + 1;
+                    	String comment = sampler.getComment();
+                    	if(!StringUtils.isBlank(comment) && comment.contains("${stepNumber}")){
+                    		log.info("comment - " + comment);
+                    		String name = myTargetFinal.getName();
+                    		String parentStepNumber = StringUtils.substringBefore(name, " ");
+                    		log.info("parentStepNumber - " + parentStepNumber);                    		
+                    		String newName = comment.replace("${stepNumber}", parentStepNumber + "." + (position * 10));
+                    		log.info("newName - " + newName);                    		                    		
+                    		sampler.setName(newName);            
+                    		sampler.setComment("");
+                    	}
+                    	
                         if (firstInBatchFinal) {
                             if (addAssertions) {
                                 addAssertion(treeModel, newNode);
@@ -1046,6 +1082,48 @@ public class ProxyControl extends GenericController {
         }
     }
 
+    private void removeHeadersByDefaults(HeaderManager manager,  Collection<ConfigTestElement> configurations) {
+    	HashMap<String, String> defaults = new HashMap<String,String>();
+    	
+    	for (Iterator<ConfigTestElement> configs = configurations.iterator(); configs.hasNext();) {
+            ConfigTestElement config = configs.next();
+            if (!(config instanceof HeaderManager)){
+            	continue;
+            }
+            
+            HeaderManager confManager = (HeaderManager)config;
+            
+            for(PropertyIterator confProps = confManager.getHeaders().iterator(); confProps.hasNext();) {            	
+                JMeterProperty confProp = confProps.next();
+                if (!(confProp.getObjectValue() instanceof Header))
+            		continue;
+                Header header = (Header) confProp.getObjectValue();                
+                defaults.put(header.getName(), header.getValue());
+                log.info("+ "+header.getName() + ":" + header.getValue());
+            }
+    	}
+    	
+    	ArrayList<String> headersToRemove = new ArrayList<String>();
+    	
+    	for (PropertyIterator props = manager.getHeaders().iterator(); props.hasNext();) {
+            JMeterProperty prop = props.next();
+            String name = prop.getName();
+            if(prop.getObjectValue() instanceof Header){
+            	log.warn("It's header");
+            	Header header = (Header)prop.getObjectValue(); 
+                if(defaults.containsKey(header.getName()) && header.getValue().equals(defaults.get(name))){
+                	headersToRemove.add(name);
+                }
+            }else{
+            	log.warn(prop.getObjectValue().getClass().getName());
+            }
+        }
+    	
+    	for(String headerName : headersToRemove){
+    		manager.removeHeaderNamed(headerName);
+    	}
+    }
+    
     /**
      * Remove from the sampler all values which match the one provided by the
      * first configuration in the given collection which provides a value for

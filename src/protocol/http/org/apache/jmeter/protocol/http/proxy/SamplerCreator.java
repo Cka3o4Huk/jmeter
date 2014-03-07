@@ -80,4 +80,6 @@ public interface SamplerCreator {
     HTTPSamplerBase createAndPopulateSampler(HttpRequestHdr request,
             Map<String, String> pageEncodings, Map<String, String> formEncodings)
                     throws Exception;
+    
+    boolean isPreferrable();
 }

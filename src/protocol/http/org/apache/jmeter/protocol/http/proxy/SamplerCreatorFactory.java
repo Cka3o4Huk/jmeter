@@ -36,7 +36,8 @@ public class SamplerCreatorFactory {
     private static final Logger log = LoggingManager.getLoggerForClass();
 
     private static final SamplerCreator DEFAULT_SAMPLER_CREATOR = new DefaultSamplerCreator();
-
+    private static SamplerCreator preferrable = null; 
+    
     private final Map<String, SamplerCreator> samplerCreatorMap = new HashMap<String, SamplerCreator>();
 
     /**
@@ -75,7 +76,12 @@ public class SamplerCreatorFactory {
                                     log.warn("A sampler creator was already registered for:"+contentType+", class:"+oldSamplerCreator.getClass()
                                             + ", it will be replaced");
                                 }
-                            }                        
+                            }      
+                            
+                            if(creator.isPreferrable()){
+                            	log.warn("Preferrable creator is overriden by " + creator.getClass());
+                            	preferrable = creator;
+                            }
                     }
                 } catch (Exception e) {
                     log.error("Exception registering "+SamplerCreator.class.getName() + " with implementation:"+strClassName, e);
@@ -95,10 +101,12 @@ public class SamplerCreatorFactory {
      */
     public SamplerCreator getSamplerCreator(HttpRequestHdr request,
             Map<String, String> pageEncodings, Map<String, String> formEncodings) {
+    	
         SamplerCreator creator = samplerCreatorMap.get(request.getContentType());
         if(creator == null) {
-            return DEFAULT_SAMPLER_CREATOR;
+        	return (preferrable == null) ? DEFAULT_SAMPLER_CREATOR : preferrable;        
         }
+        
         return creator;
     }
 }

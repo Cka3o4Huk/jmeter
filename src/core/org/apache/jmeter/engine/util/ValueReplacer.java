@@ -147,7 +147,8 @@ public class ValueReplacer {
             if (val instanceof StringProperty) {
                 // Must not convert TestElement.gui_class etc
                 if (!val.getName().equals(TestElement.GUI_CLASS) &&
-                        !val.getName().equals(TestElement.TEST_CLASS)) {
+                        !val.getName().equals(TestElement.TEST_CLASS) &&
+                        !val.getName().equals(TestElement.NAME)) {
                     val = transform.transformValue(val);
                     if (log.isDebugEnabled()) {
                         log.debug("Replacement result: " + val);
