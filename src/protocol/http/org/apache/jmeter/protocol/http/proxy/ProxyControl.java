@@ -992,17 +992,18 @@ public class ProxyControl extends GenericController {
 	            deltaT = now - lastTime;            
 	            if (deltaT > sampleGap) {
 	                if (!myTarget.isLeaf() && cachedGroupingMode == GROUPING_ADD_SEPARATORS) {
-	                    addDivider(treeModel, myTarget);
-	                }
-	                if (cachedGroupingMode == GROUPING_IN_SIMPLE_CONTROLLERS) {
-	                    addSimpleController(treeModel, myTarget, sampler.getName());
+                        addDivider(treeModel, myTarget);
+                    }
+	                
+	                String suffixName = StringUtils.substringAfter(sampler.getName(), ".");
+                    String prefixName = StringUtils.substringBefore(myTarget.getName(),".");
+                    String controllerName = prefixName + "." + suffixName;
+	                
+	                if (cachedGroupingMode == GROUPING_IN_SIMPLE_CONTROLLERS) {	                    
+	                    addSimpleController(treeModel, myTarget, controllerName);
 	                }
 	                if (cachedGroupingMode == GROUPING_IN_TRANSACTION_CONTROLLERS) {
-	                    log.info("HC:" + this.hashCode());
-	                    log.info("NOW:" + now);
-	                    log.info("LT:" + lastTime);
-	                    log.info(sampler.getName());
-	                	addTransactionController(treeModel, myTarget, sampler.getName());
+	                	addTransactionController(treeModel, myTarget, controllerName);
 	                }
 	                firstInBatch = true;// Remember this was first in its batch
 	            }
