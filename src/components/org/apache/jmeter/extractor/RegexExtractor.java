@@ -23,7 +23,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.StringEscapeUtils;
+import org.apache.jmeter.assertions.AssertionResult;
 import org.apache.jmeter.processor.PostProcessor;
 import org.apache.jmeter.samplers.SampleResult;
 import org.apache.jmeter.testelement.AbstractScopedTestElement;
@@ -84,6 +86,10 @@ public class RegexExtractor extends AbstractScopedTestElement implements PostPro
 
     private static final String UNDERSCORE = "_";  // $NON-NLS-1$
 
+    private static final String FAILIFNOTFOUND = "RegexExtractor.fail_if_not_found";
+    
+    private static final String FAILMESSAGE = "RegexExtractor.fail_message";
+    
     private transient List<Object> template;
 
     /**
@@ -117,6 +123,10 @@ public class RegexExtractor extends AbstractScopedTestElement implements PostPro
         try {
             pattern = JMeterUtils.getPatternCache().getPattern(regex, Perl5Compiler.READ_ONLY_MASK);
             List<MatchResult> matches = processMatches(pattern, regex, previousResult, matchNumber, vars);
+            
+            if(matches.isEmpty() && isFailIfNotFound()){
+                failResult(previousResult);
+            }
             int prevCount = 0;
             String prevString = vars.get(refName + REF_MATCH_NR);
             if (prevString != null) {
@@ -169,6 +179,14 @@ public class RegexExtractor extends AbstractScopedTestElement implements PostPro
         }
     }
 
+    private void failResult(SampleResult previousResult){
+        previousResult.setSuccessful(false);
+        AssertionResult res = new AssertionResult(getName());
+        res.setFailure(true);
+        res.setFailureMessage(StringUtils.defaultIfEmpty(getFailMessage(), "Pattern not found - " + getRegex()));
+        previousResult.addAssertionResult(res);
+    }
+    
     private String getInputString(SampleResult result) {
         String inputString = useUrl() ? result.getUrlAsString() // Bug 39707
                 : useHeaders() ? result.getResponseHeaders()
@@ -468,5 +486,22 @@ public class RegexExtractor extends AbstractScopedTestElement implements PostPro
 
     public void setUseField(String actionCommand) {
         setProperty(MATCH_AGAINST,actionCommand);
+    }
+    
+    public void setFailIfNotFound(Boolean isFailing){
+        log.warn("Setting fail as " + isFailing);
+        setProperty(FAILIFNOTFOUND,isFailing);
+    }
+    
+    public boolean isFailIfNotFound(){
+        return getPropertyAsBoolean(FAILIFNOTFOUND);
+    }
+    
+    public void setFailMessage(String message){
+        setProperty(FAILMESSAGE, message);
+    }
+    
+    public String getFailMessage(){
+        return getPropertyAsString(FAILMESSAGE);
     }
 }
