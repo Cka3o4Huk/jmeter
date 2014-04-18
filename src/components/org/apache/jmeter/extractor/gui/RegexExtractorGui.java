@@ -26,6 +26,7 @@ import java.util.List;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.ButtonGroup;
+import javax.swing.JCheckBox;
 import javax.swing.JComponent;
 import javax.swing.JPanel;
 import javax.swing.JRadioButton;
@@ -68,6 +69,10 @@ public class RegexExtractorGui extends AbstractPostProcessorGui {
     private JRadioButton useMessage;
 
     private ButtonGroup group;
+    
+    private JCheckBox failResult;
+    
+    private JLabeledTextField failMessage;
 
     public RegexExtractorGui() {
         super();
@@ -97,6 +102,8 @@ public class RegexExtractorGui extends AbstractPostProcessorGui {
             defaultField.setText(re.getDefaultValue());
             matchNumberField.setText(re.getMatchNumberAsString());
             refNameField.setText(re.getRefName());
+            failResult.setSelected(re.isFailIfNotFound());
+            failMessage.setText(re.getFailMessage());
         }
     }
 
@@ -127,6 +134,8 @@ public class RegexExtractorGui extends AbstractPostProcessorGui {
             regex.setTemplate(templateField.getText());
             regex.setDefaultValue(defaultField.getText());
             regex.setMatchNumber(matchNumberField.getText());
+            regex.setFailIfNotFound(failResult.isSelected());
+            regex.setFailMessage(failMessage.getText());
         }
     }
 
@@ -154,10 +163,21 @@ public class RegexExtractorGui extends AbstractPostProcessorGui {
         box.add(makeTitlePanel());
         box.add(createScopePanel(true));
         box.add(makeSourcePanel());
+        box.add(makeNotMatch());
         add(box, BorderLayout.NORTH);
         add(makeParameterPanel(), BorderLayout.CENTER);
     }
 
+    private JPanel makeNotMatch(){
+        JPanel panel = new JPanel(new BorderLayout(5, 0));
+        panel.setBorder(BorderFactory.createTitledBorder("Matching options"));
+        failResult = new JCheckBox("Fail if nothing found with message");
+        failMessage = new JLabeledTextField();
+        panel.add(failResult, BorderLayout.WEST);
+        panel.add(failMessage, BorderLayout.CENTER);
+        return panel;
+    }
+    
     private JPanel makeSourcePanel() {
         JPanel panel = new JPanel();
         panel.setBorder(BorderFactory.createTitledBorder(JMeterUtils.getResString("regex_source"))); //$NON-NLS-1$
