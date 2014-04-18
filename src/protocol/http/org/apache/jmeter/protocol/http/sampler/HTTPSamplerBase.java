@@ -22,6 +22,7 @@ import java.io.InputStream;
 import java.io.PrintStream;
 import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -1024,7 +1025,11 @@ public abstract class HTTPSamplerBase extends AbstractSampler
      */
     public void parseArguments(String queryString, String contentEncoding) {
         String[] args = JOrphanUtils.split(queryString, QRY_SEP);
+        final boolean isDebug = log.isDebugEnabled();
         for (int i = 0; i < args.length; i++) {
+            if (isDebug) {
+                log.debug("Arg: " + args[i]);
+            }
             // need to handle four cases:
             // - string contains name=value
             // - string contains name=
@@ -1047,6 +1052,9 @@ public abstract class HTTPSamplerBase extends AbstractSampler
                 value="";
             }
             if (name.length() > 0) {
+                if (isDebug) {
+                    log.debug("Name: " + name+ " Value: " + value+ " Metadata: " + metaData);
+                }
                 // If we know the encoding, we can decode the argument value,
                 // to make it easier to read for the user
                 if(!StringUtils.isEmpty(contentEncoding)) {
@@ -1395,6 +1403,9 @@ public abstract class HTTPSamplerBase extends AbstractSampler
         for (redirect = 0; redirect < MAX_REDIRECTS; redirect++) {
             boolean invalidRedirectUrl = false;
             String location = lastRes.getRedirectLocation(); 
+            if (log.isDebugEnabled()) {
+                log.debug("Initial location: " + location);
+            }
             if (REMOVESLASHDOTDOT) {
                 location = ConversionUtils.removeSlashDotDot(location);
             }
@@ -1402,14 +1413,26 @@ public abstract class HTTPSamplerBase extends AbstractSampler
             // replacing them automatically with %20. We want to emulate
             // this behaviour.
             location = encodeSpaces(location);
+            if (log.isDebugEnabled()) {
+                log.debug("Location after /. and space transforms: " + location);
+            }
             // Change all but HEAD into GET (Bug 55450)
             String method = lastRes.getHTTPMethod();
             if (!HTTPConstants.HEAD.equalsIgnoreCase(method)) {
                 method = HTTPConstants.GET;
             }
             try {
-                lastRes = sample(ConversionUtils.makeRelativeURL(lastRes.getURL(), location), method, true, frameDepth);
+                URL url = ConversionUtils.makeRelativeURL(lastRes.getURL(), location);
+                url = ConversionUtils.sanitizeUrl(url).toURL();
+                if (log.isDebugEnabled()) {
+                    log.debug("Location as URL: " + url.toString());
+                }
+                lastRes = sample(url, method, true, frameDepth);
             } catch (MalformedURLException e) {
+                errorResult(e, lastRes);
+                // The redirect URL we got was not a valid URL
+                invalidRedirectUrl = true;
+            } catch (URISyntaxException e) {
                 errorResult(e, lastRes);
                 // The redirect URL we got was not a valid URL
                 invalidRedirectUrl = true;

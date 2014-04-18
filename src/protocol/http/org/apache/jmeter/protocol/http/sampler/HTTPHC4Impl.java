@@ -73,6 +73,7 @@ import org.apache.http.client.methods.HttpUriRequest;
 import org.apache.http.client.params.ClientPNames;
 import org.apache.http.client.params.CookiePolicy;
 import org.apache.http.client.protocol.ResponseContentEncoding;
+import org.apache.http.conn.ConnectionKeepAliveStrategy;
 import org.apache.http.conn.params.ConnRoutePNames;
 import org.apache.http.conn.scheme.Scheme;
 import org.apache.http.conn.scheme.SchemeRegistry;
@@ -85,6 +86,7 @@ import org.apache.http.entity.mime.MultipartEntity;
 import org.apache.http.entity.mime.content.FileBody;
 import org.apache.http.entity.mime.content.StringBody;
 import org.apache.http.impl.client.AbstractHttpClient;
+import org.apache.http.impl.client.DefaultConnectionKeepAliveStrategy;
 import org.apache.http.impl.client.DefaultHttpClient;
 import org.apache.http.impl.client.DefaultHttpRequestRetryHandler;
 import org.apache.http.message.BasicNameValuePair;
@@ -102,7 +104,6 @@ import org.apache.jmeter.protocol.http.control.AuthManager;
 import org.apache.jmeter.protocol.http.control.CacheManager;
 import org.apache.jmeter.protocol.http.control.CookieManager;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
-import org.apache.jmeter.protocol.http.util.ConversionUtils;
 import org.apache.jmeter.protocol.http.util.EncoderCache;
 import org.apache.jmeter.protocol.http.util.HC4TrustAllSSLSocketFactory;
 import org.apache.jmeter.protocol.http.util.HTTPArgument;
@@ -127,12 +128,26 @@ public class HTTPHC4Impl extends HTTPHCAbstractImpl {
 
     private static final Logger log = LoggingManager.getLoggerForClass();
 
-    private static final boolean STRICT_RFC_2616 = JMeterUtils.getPropDefault("jmeter.httpclient.strict_rfc2616", false);
-
-    /** retry count to be used (default 1); 0 = disable retries */
+    /** retry count to be used (default 0); 0 = disable retries */
     private static final int RETRY_COUNT = JMeterUtils.getPropDefault("httpclient4.retrycount", 0);
 
+    /** Idle timeout to be applied to connections if no Keep-Alive header is sent by the server (default 0 = disable) */
+    private static final int IDLE_TIMEOUT = JMeterUtils.getPropDefault("httpclient4.idletimeout", 0);
+
     private static final String CONTEXT_METRICS = "jmeter_metrics"; // TODO hack for metrics related to HTTPCLIENT-1081, to be removed later
+
+    private static final ConnectionKeepAliveStrategy IDLE_STRATEGY = new DefaultConnectionKeepAliveStrategy(){
+        @Override
+        public long getKeepAliveDuration(HttpResponse response, HttpContext context) {
+            long duration = super.getKeepAliveDuration(response, context);
+            if (duration <= 0) {// none found by the superclass
+                log.debug("Setting keepalive to " + IDLE_TIMEOUT);
+                return IDLE_TIMEOUT;
+            }
+            return duration; // return the super-class value
+        }
+        
+    };
 
     /**
      * Special interceptor made to keep metrics when connection is released for some method like HEAD
@@ -183,7 +198,7 @@ public class HTTPHC4Impl extends HTTPHCAbstractImpl {
         log.info("HTTP request retry count = "+RETRY_COUNT);
         
         DEFAULT_HTTP_PARAMS = new SyncBasicHttpParams(); // Could we drop the Sync here?
-        DEFAULT_HTTP_PARAMS.setBooleanParameter("http.connection.stalecheck", false);
+        DEFAULT_HTTP_PARAMS.setBooleanParameter(CoreConnectionPNames.STALE_CONNECTION_CHECK, false);
         DefaultHttpClient.setDefaultHttpParams(DEFAULT_HTTP_PARAMS);
         
         // Process Apache HttpClient parameters file
@@ -248,6 +263,11 @@ public class HTTPHC4Impl extends HTTPHCAbstractImpl {
     @Override
     protected HTTPSampleResult sample(URL url, String method,
             boolean areFollowingRedirect, int frameDepth) {
+
+        if (log.isDebugEnabled()) {
+            log.debug("Start : sample " + url.toString());
+            log.debug("method " + method+ " followingRedirect " + areFollowingRedirect + " depth " + frameDepth);            
+        }
 
         HTTPSampleResult res = createSampleResult(url, method);
 
@@ -342,16 +362,7 @@ public class HTTPHC4Impl extends HTTPHCAbstractImpl {
                     throw new IllegalArgumentException("Missing location header in redirect for " + httpRequest.getRequestLine());
                 }
                 String redirectLocation = headerLocation.getValue();
-                if(!STRICT_RFC_2616 && !(redirectLocation.startsWith("http://")|| redirectLocation.startsWith("https://"))) {
-                    redirectLocation = ConversionUtils.buildFullUrlFromRelative(url, redirectLocation);
-                }
-                try {
-                    final URL redirectUrl = new URL(redirectLocation);
-                    res.setRedirectLocation(ConversionUtils.sanitizeUrl(redirectUrl).toString());
-                } catch (Exception e) {
-                    log.error("Error in redirect URL for "  + httpRequest.getRequestLine()
-                            +"\n\tCould not sanitize URL: " + redirectLocation + "\n\t", e);
-                }
+                res.setRedirectLocation(redirectLocation);
             }
 
             // record some sizes to allow HTTPSampleResult.getBytes() with different options
@@ -629,6 +640,9 @@ public class HTTPHC4Impl extends HTTPHCAbstractImpl {
                     return new DefaultHttpRequestRetryHandler(RETRY_COUNT, false); // set retry count
                 }
             };
+            if (IDLE_TIMEOUT > 0) {
+                ((AbstractHttpClient) httpClient).setKeepAliveStrategy(IDLE_STRATEGY );
+            }
             ((AbstractHttpClient) httpClient).addResponseInterceptor(new ResponseContentEncoding());
             ((AbstractHttpClient) httpClient).addResponseInterceptor(METRICS_SAVER); // HACK
             ((AbstractHttpClient) httpClient).addRequestInterceptor(METRICS_RESETTER); 

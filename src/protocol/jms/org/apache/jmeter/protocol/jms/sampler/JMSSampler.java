@@ -19,7 +19,6 @@
 package org.apache.jmeter.protocol.jms.sampler;
 
 import java.util.Date;
-import java.util.Enumeration;
 import java.util.Hashtable;
 import java.util.Map;
 
@@ -329,15 +328,16 @@ public class JMSSampler extends AbstractSampler implements ThreadListener {
 
             if (!useTemporyQueue()) {
                 receiveQueue = (Queue) context.lookup(getReceiveQueue());
-                receiverThread = Receiver.createReceiver(factory, receiveQueue, getPrincipal(context), getCredentials(context)
+                receiverThread = Receiver.createReceiver(factory, receiveQueue, Utils.getFromEnvironment(context, Context.SECURITY_PRINCIPAL), 
+                        Utils.getFromEnvironment(context, Context.SECURITY_CREDENTIALS)
                         , isUseResMsgIdAsCorrelId(), getJMSSelector());
             }
 
             String principal = null;
             String credentials = null;
             if (USE_SECURITY_PROPERTIES){
-                principal = getPrincipal(context);
-                credentials = getCredentials(context);
+                principal = Utils.getFromEnvironment(context, Context.SECURITY_PRINCIPAL);
+                credentials = Utils.getFromEnvironment(context, Context.SECURITY_CREDENTIALS);
             }
             if (principal != null && credentials != null) {
                 connection = factory.createQueueConnection(principal, credentials);
@@ -429,13 +429,19 @@ public class JMSSampler extends AbstractSampler implements ThreadListener {
     }
 
     private void printEnvironment(Context context) throws NamingException {
-        Hashtable<?,?> env = context.getEnvironment();
-        LOGGER.debug("Initial Context Properties");
-        @SuppressWarnings("unchecked")
-        Enumeration<String> keys = (Enumeration<String>) env.keys();
-        while (keys.hasMoreElements()) {
-            String key = keys.nextElement();
-            LOGGER.debug(key + "=" + env.get(key));
+        try {
+            Hashtable<?,?> env = context.getEnvironment();
+            if(env != null) {
+                LOGGER.debug("Initial Context Properties");
+                for (Map.Entry<?, ?> entry : env.entrySet()) {
+                    LOGGER.debug(entry.getKey() + "=" + entry.getValue());
+                }
+            } else {
+                LOGGER.warn("context.getEnvironment() returned null (should not happen according to javadoc but non compliant implementation can return this)");
+            }
+        } catch (javax.naming.OperationNotSupportedException ex) {
+            // Some JNDI implementation can return this
+            LOGGER.warn("context.getEnvironment() not supported by implementation ");
         }
     }
 
@@ -520,29 +526,5 @@ public class JMSSampler extends AbstractSampler implements ThreadListener {
     public void setContextProvider(String string) {
         setProperty(JNDI_CONTEXT_PROVIDER_URL, string);
 
-    }
-
-    /**
-     * get the principal from the context property java.naming.security.principal
-     *
-     * @param context
-     * @return the principal
-     * @throws NamingException
-     */
-    private String getPrincipal(Context context) throws NamingException{
-            Hashtable<?,?> env = context.getEnvironment();
-            return (String) env.get("java.naming.security.principal"); // $NON-NLS-1$
-    }
-
-    /**
-     * get the credentials from the context property java.naming.security.credentials
-     *
-     * @param context
-     * @return the credentials
-     * @throws NamingException
-     */
-    private String getCredentials(Context context) throws NamingException{
-            Hashtable<?,?> env = context.getEnvironment();
-            return (String) env.get("java.naming.security.credentials"); // $NON-NLS-1$
     }
 }

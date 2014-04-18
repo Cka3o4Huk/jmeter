@@ -53,13 +53,10 @@ public class BeanShellClient {
 
         Socket sock = new Socket(host,port);
         InputStream is = sock.getInputStream();
+        SockRead sockRead = new SockRead(is);
+        sockRead.start();
 
         OutputStream os = sock.getOutputStream();
-
-        InputStreamReader fis = new FileReader(file);
-
-        new SockRead(is).start();
-
         sendLine("bsh.prompt=\"\";",os);// Prompt is unnecessary
 
         sendLine("String [] args={",os);
@@ -69,14 +66,17 @@ public class BeanShellClient {
         sendLine("};",os);
 
         int b;
+        InputStreamReader fis = new FileReader(file);
         while ((b=fis.read()) != -1){
             os.write(b);
         }
         fis.close();
         sendLine("bsh.prompt=\"bsh % \";",os);// Reset for other users
         os.flush();
-        os.close();
         sock.shutdownOutput(); // Tell server that we are done
+        sockRead.join(); // wait for script to finish
+        is.close();
+        os.close();
     }
 
     private static void sendLine( String line, OutputStream outPipe )
@@ -108,15 +108,7 @@ public class BeanShellClient {
                 // TODO Why empty block ?
             } finally {
                 System.out.println("... disconnected from server.");
-                if (is != null) {
-                    try {
-                        is.close();
-                    } catch (IOException e) {
-                    }
-                }
             }
-
         }
-
     }
 }

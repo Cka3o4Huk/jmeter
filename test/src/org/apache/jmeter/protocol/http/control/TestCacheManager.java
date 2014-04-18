@@ -39,8 +39,8 @@ import org.apache.commons.httpclient.methods.PostMethod;
 import org.apache.commons.httpclient.util.HttpURLConnection;
 import org.apache.jmeter.junit.JMeterTestCase;
 import org.apache.jmeter.protocol.http.control.CacheManager.CacheEntry;
+import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
-import org.apache.jmeter.samplers.SampleResult;
 
 public class TestCacheManager extends JMeterTestCase {
     
@@ -149,7 +149,7 @@ public class TestCacheManager extends JMeterTestCase {
     private URLConnection urlConnection;
     private HttpMethod httpMethod;
     private HttpURLConnection httpUrlConnection;
-    private SampleResult sampleResultOK;
+    private HTTPSampleResult sampleResultOK;
 
     public TestCacheManager(String name) {
         super(name);
@@ -255,6 +255,20 @@ public class TestCacheManager extends JMeterTestCase {
         assertTrue("Should find valid entry",this.cacheManager.inCache(url));
         Thread.sleep(5010);
         assertNotNull("Should find entry",getThreadCacheEntry(LOCAL_HOST));
+        assertFalse("Should not find valid entry",this.cacheManager.inCache(url));
+    }
+    
+    public void testCacheHttpClientHEAD() throws Exception{
+        this.cacheManager.setUseExpires(true);
+        this.cacheManager.testIterationStart(null);
+        assertNull("Should not find entry",getThreadCacheEntry(LOCAL_HOST));
+        assertFalse("Should not find valid entry",this.cacheManager.inCache(url));
+        ((HttpMethodStub)httpMethod).expires=makeDate(new Date(System.currentTimeMillis()));
+        ((HttpMethodStub)httpMethod).cacheControl="public, max-age=5";
+        HTTPSampleResult sampleResultHEAD=getSampleResultWithSpecifiedResponseCode("200");
+        sampleResultHEAD.setHTTPMethod("HEAD");
+        this.cacheManager.saveDetails(httpMethod, sampleResultHEAD);
+        assertNull("Should not find entry",getThreadCacheEntry(LOCAL_HOST));
         assertFalse("Should not find valid entry",this.cacheManager.inCache(url));
     }
     
@@ -433,9 +447,10 @@ public class TestCacheManager extends JMeterTestCase {
         assertEquals("Unexpected value for property " + property, expectedPropertyValue, listOfPropertyValues.get(0));
     }
     
-    private SampleResult getSampleResultWithSpecifiedResponseCode(String code) {
-        SampleResult sampleResult = new SampleResult();
+    private HTTPSampleResult getSampleResultWithSpecifiedResponseCode(String code) {
+        HTTPSampleResult sampleResult = new HTTPSampleResult();
         sampleResult.setResponseCode(code);
+        sampleResult.setHTTPMethod("GET");
         return sampleResult;
     }
 
@@ -452,12 +467,12 @@ public class TestCacheManager extends JMeterTestCase {
     }
 
     private void saveDetailsWithHttpMethodAndSampleResultWithResponseCode(String responseCode) throws Exception {
-        SampleResult sampleResult = getSampleResultWithSpecifiedResponseCode(responseCode);
+        HTTPSampleResult sampleResult = getSampleResultWithSpecifiedResponseCode(responseCode);
         this.cacheManager.saveDetails(this.httpMethod, sampleResult);
     }
 
     private void saveDetailsWithConnectionAndSampleResultWithResponseCode(String responseCode) {
-        SampleResult sampleResult = getSampleResultWithSpecifiedResponseCode(responseCode);
+        HTTPSampleResult sampleResult = getSampleResultWithSpecifiedResponseCode(responseCode);
         this.cacheManager.saveDetails(this.urlConnection, sampleResult);
     }
 

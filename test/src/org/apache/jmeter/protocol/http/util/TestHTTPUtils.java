@@ -61,6 +61,15 @@ public class TestHTTPUtils extends TestCase {
         assertEquals(new URL("http://192.168.0.1/a/b/c/d"),ConversionUtils.makeRelativeURL(base,"./d"));
     }
 
+    // Test that location urls with a protocol are passed unchanged
+    public void testMakeRelativeURL3() throws Exception {
+        URL base = new URL("http://ahost.invalid/a/b/c");
+        assertEquals(new URL("http://host.invalid/e"),ConversionUtils.makeRelativeURL(base ,"http://host.invalid/e"));
+        assertEquals(new URL("https://host.invalid/e"),ConversionUtils.makeRelativeURL(base ,"https://host.invalid/e"));
+        assertEquals(new URL("http://host.invalid:8081/e"),ConversionUtils.makeRelativeURL(base ,"http://host.invalid:8081/e"));
+        assertEquals(new URL("https://host.invalid:8081/e"),ConversionUtils.makeRelativeURL(base ,"https://host.invalid:8081/e"));
+    }
+
     public void testRemoveSlashDotDot()
     {
         assertEquals("/path/", ConversionUtils.removeSlashDotDot("/path/"));
@@ -83,13 +92,18 @@ public class TestHTTPUtils extends TestCase {
     }
     
     public void testsanitizeUrl() throws Exception {
-        testSanitizeUrl("http://localhost/", "http://localhost/");
-        testSanitizeUrl("http://localhost/a/b/c%7Cd", "http://localhost/a/b/c|d");
-        testSanitizeUrl("http://localhost:8080/%5B%5D", "http://localhost:8080/%5B%5D");
-        testSanitizeUrl("http://localhost:8080/?%5B%5D", "http://localhost:8080/?%5B%5D");
-        testSanitizeUrl("http://localhost:8080/?%25%5B%5D%21%40%24%25%5E*%28%29", "http://localhost:8080/?%25%5B%5D!@$%^*()#");
-        testSanitizeUrl("http://localhost:8080/%5B%5D?%5B%5D%21%40%24%25%5E*%28%29", "http://localhost:8080/%5B%5D?[]!@$%^*()#");
-
+        testSanitizeUrl("http://localhost/", "http://localhost/"); // normal, no encoding needed
+        testSanitizeUrl("http://localhost/a/b/c%7Cd", "http://localhost/a/b/c|d"); // pipe needs encoding
+        testSanitizeUrl("http://localhost:8080/%5B%5D", "http://localhost:8080/%5B%5D"); // already encoded
+        testSanitizeUrl("http://localhost:8080/?%5B%5D", "http://localhost:8080/?%5B%5D"); //already encoded
+        testSanitizeUrl("http://localhost:8080/?!£$*():@~;'%22%25%5E%7B%7D[]%3C%3E%7C%5C#",
+                        "http://localhost:8080/?!£$*():@~;'\"%^{}[]<>|\\#"); // unencoded query
+        testSanitizeUrl("http://localhost:8080/?!£$*():@~;'%22%25%5E%7B%7D[]%3C%3E%7C%5C#",
+                        "http://localhost:8080/?!£$*():@~;'%22%25%5E%7B%7D[]%3C%3E%7C%5C#"); // encoded
+        testSanitizeUrl("http://localhost:8080/!£$*():@~;'%22%25%5E%7B%7D%5B%5D%3C%3E%7C%5C#",
+                        "http://localhost:8080/!£$*():@~;'\"%^{}[]<>|\\#"); // unencoded path
+        testSanitizeUrl("http://localhost:8080/!£$*():@~;'%22%25%5E%7B%7D%5B%5D%3C%3E%7C%5C#",
+                        "http://localhost:8080/!£$*():@~;'%22%25%5E%7B%7D%5B%5D%3C%3E%7C%5C#"); // encoded
     }
     
 

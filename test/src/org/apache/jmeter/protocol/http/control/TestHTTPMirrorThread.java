@@ -13,7 +13,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- * 
+ *
  */
 
 package org.apache.jmeter.protocol.http.control;
@@ -22,24 +22,13 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
+import java.net.HttpURLConnection;
 import java.net.Socket;
-/*
-import org.apache.jmeter.engine.util.ValueReplacer;
-import org.apache.jmeter.protocol.http.control.HttpMirrorControl;
-import org.apache.jmeter.protocol.http.sampler.HTTPSampler2;
-import org.apache.jmeter.protocol.http.sampler.HTTPSamplerBase;
-import org.apache.jmeter.protocol.http.util.EncoderCache;
-import org.apache.jmeter.protocol.http.util.HTTPArgument;
-import org.apache.jmeter.testelement.TestPlan;
-import org.apache.jmeter.threads.JMeterContextService;
-import org.apache.jmeter.threads.JMeterVariables;
-import org.apache.jmeter.util.JMeterUtils;
-import org.apache.oro.text.regex.MatchResult;
-import org.apache.oro.text.regex.Pattern;
-import org.apache.oro.text.regex.PatternMatcherInput;
-import org.apache.oro.text.regex.Perl5Compiler;
-import org.apache.oro.text.regex.Perl5Matcher;
-*/
+import java.net.URI;
+import java.net.URL;
+
+import org.apache.commons.io.IOUtils;
+
 import junit.framework.Test;
 import junit.framework.TestCase;
 import junit.framework.TestSuite;
@@ -60,16 +49,18 @@ public class TestHTTPMirrorThread extends TestCase {
     public TestHTTPMirrorThread(String arg0) {
         super(arg0);
     }
-    
+
+    // We need to use a suite in order to preserve the server across test cases
+    // With JUnit4 we could use before/after class annotations
     public static Test suite(){
-        TestSetup setup = new TestSetup(new TestSuite(TestHTTPMirrorThread.class)){         
+        TestSetup setup = new TestSetup(new TestSuite(TestHTTPMirrorThread.class)){
             private HttpMirrorServer httpServer;
-            
+
             @Override
             protected void setUp() throws Exception {
                 httpServer = startHttpMirror(HTTP_SERVER_PORT);
             }
-            
+
             @Override
             protected void tearDown() throws Exception {
                 // Shutdown the http server
@@ -102,19 +93,19 @@ public class TestHTTPMirrorThread extends TestCase {
                 break; // succeeded
             }
         }
-        
+
         if (!server.isAlive()){
             throw new Exception("Could not start mirror server on port: "+port);
         }
         return server;
     }
 
-    public void testGetRequest() throws Exception {        
+    public void testGetRequest() throws Exception {
         // Connect to the http server, and do a simple http get
         Socket clientSocket = new Socket("localhost", HTTP_SERVER_PORT);
         OutputStream outputStream = clientSocket.getOutputStream();
         InputStream inputStream = clientSocket.getInputStream();
-        
+
         // Write to the socket
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
         // Headers
@@ -125,19 +116,21 @@ public class TestHTTPMirrorThread extends TestCase {
         bos.write(CRLF);
         bos.close();
         outputStream.write(bos.toByteArray());
-        
+
         // Read the response
-        ByteArrayOutputStream response = new ByteArrayOutputStream();        
+        ByteArrayOutputStream response = new ByteArrayOutputStream();
         byte[] buffer = new byte[1024];
         int length = 0;
         while(( length = inputStream.read(buffer)) != -1) {
             response.write(buffer, 0, length);
         }
         response.close();
-        byte[] mirroredResponse = getMirroredResponse(response.toByteArray());          
+        byte[] mirroredResponse = getMirroredResponse(response.toByteArray());
         // Check that the request and response matches
         checkArraysHaveSameContent(bos.toByteArray(), mirroredResponse);
         // Close the connection
+        outputStream.close();
+        inputStream.close();
         clientSocket.close();
 
         // Connect to the http server, and do a simple http get, with
@@ -145,7 +138,7 @@ public class TestHTTPMirrorThread extends TestCase {
         clientSocket = new Socket("localhost", HTTP_SERVER_PORT);
         outputStream = clientSocket.getOutputStream();
         inputStream = clientSocket.getInputStream();
-        
+
         // Write to the socket
         bos = new ByteArrayOutputStream();
         // Headers
@@ -154,7 +147,7 @@ public class TestHTTPMirrorThread extends TestCase {
         // Write the start of the headers, and then sleep, so that the mirror
         // thread will have to block to wait for more data to appear
         bos.close();
-        byte[] firstChunk = bos.toByteArray(); 
+        byte[] firstChunk = bos.toByteArray();
         outputStream.write(firstChunk);
         Thread.sleep(300);
         // Write the rest of the headers
@@ -163,10 +156,10 @@ public class TestHTTPMirrorThread extends TestCase {
         bos.write(CRLF);
         bos.write(CRLF);
         bos.close();
-        byte[] secondChunk = bos.toByteArray(); 
+        byte[] secondChunk = bos.toByteArray();
         outputStream.write(secondChunk);
         // Read the response
-        response = new ByteArrayOutputStream();        
+        response = new ByteArrayOutputStream();
         buffer = new byte[1024];
         length = 0;
         while((length = inputStream.read(buffer)) != -1) {
@@ -178,11 +171,13 @@ public class TestHTTPMirrorThread extends TestCase {
         bos = new ByteArrayOutputStream();
         bos.write(firstChunk);
         bos.write(secondChunk);
-        bos.close();        
+        bos.close();
         // Check that the request and response matches
         checkArraysHaveSameContent(bos.toByteArray(), mirroredResponse);
         // Close the connection
-        clientSocket.close();        
+        outputStream.close();
+        inputStream.close();
+        clientSocket.close();
     }
 
     public void testPostRequest() throws Exception {
@@ -196,7 +191,7 @@ public class TestHTTPMirrorThread extends TestCase {
             postBodyBuffer.append("abc");
         }
         byte[] postBody = postBodyBuffer.toString().getBytes(ISO_8859_1);
-        
+
         // Write to the socket
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
         // Headers
@@ -214,17 +209,19 @@ public class TestHTTPMirrorThread extends TestCase {
         // Write the headers and body
         outputStream.write(bos.toByteArray());
         // Read the response
-        ByteArrayOutputStream response = new ByteArrayOutputStream();        
+        ByteArrayOutputStream response = new ByteArrayOutputStream();
         byte[] buffer = new byte[1024];
         int length = 0;
         while((length = inputStream.read(buffer)) != -1) {
             response.write(buffer, 0, length);
         }
         response.close();
-        byte[] mirroredResponse = getMirroredResponse(response.toByteArray());          
+        byte[] mirroredResponse = getMirroredResponse(response.toByteArray());
         // Check that the request and response matches
         checkArraysHaveSameContent(bos.toByteArray(), mirroredResponse);
         // Close the connection
+        outputStream.close();
+        inputStream.close();
         clientSocket.close();
 
         // Connect to the http server, and do a simple http post, with
@@ -232,7 +229,7 @@ public class TestHTTPMirrorThread extends TestCase {
         clientSocket = new Socket("localhost", HTTP_SERVER_PORT);
         outputStream = clientSocket.getOutputStream();
         inputStream = clientSocket.getInputStream();
-        
+
         // Write to the socket
         bos = new ByteArrayOutputStream();
         // Headers
@@ -248,15 +245,15 @@ public class TestHTTPMirrorThread extends TestCase {
         bos.close();
         // Write the headers, and then sleep
         bos.close();
-        byte[] firstChunk = bos.toByteArray(); 
+        byte[] firstChunk = bos.toByteArray();
         outputStream.write(firstChunk);
         Thread.sleep(300);
-        
+
         // Write the body
-        byte[] secondChunk = postBody;         
+        byte[] secondChunk = postBody;
         outputStream.write(secondChunk);
         // Read the response
-        response = new ByteArrayOutputStream();        
+        response = new ByteArrayOutputStream();
         buffer = new byte[1024];
         length = 0;
         while((length = inputStream.read(buffer)) != -1) {
@@ -268,12 +265,14 @@ public class TestHTTPMirrorThread extends TestCase {
         bos = new ByteArrayOutputStream();
         bos.write(firstChunk);
         bos.write(secondChunk);
-        bos.close();        
+        bos.close();
         // Check that the request and response matches
         checkArraysHaveSameContent(bos.toByteArray(), mirroredResponse);
         // Close the connection
+        outputStream.close();
+        inputStream.close();
         clientSocket.close();
-        
+
         // Connect to the http server, and do a simple http post with utf-8
         // encoding of the body, which caused problems when reader/writer
         // classes were used in the HttpMirrorThread
@@ -286,7 +285,7 @@ public class TestHTTPMirrorThread extends TestCase {
             postBodyBuffer.append("\u0364\u00c5\u2052");
         }
         postBody = postBodyBuffer.toString().getBytes(UTF_8);
-        
+
         // Write to the socket
         bos = new ByteArrayOutputStream();
         // Headers
@@ -302,15 +301,15 @@ public class TestHTTPMirrorThread extends TestCase {
         bos.close();
         // Write the headers, and then sleep
         bos.close();
-        firstChunk = bos.toByteArray(); 
+        firstChunk = bos.toByteArray();
         outputStream.write(firstChunk);
         Thread.sleep(300);
-        
+
         // Write the body
-        secondChunk = postBody;         
+        secondChunk = postBody;
         outputStream.write(secondChunk);
         // Read the response
-        response = new ByteArrayOutputStream();        
+        response = new ByteArrayOutputStream();
         buffer = new byte[1024];
         length = 0;
         while((length = inputStream.read(buffer)) != -1) {
@@ -323,23 +322,97 @@ public class TestHTTPMirrorThread extends TestCase {
         bos.write(firstChunk);
         bos.write(secondChunk);
         bos.close();
-        // Check that the request and response matches       
+        // Check that the request and response matches
         checkArraysHaveSameContent(bos.toByteArray(), mirroredResponse);
         // Close the connection
+        outputStream.close();
+        inputStream.close();
         clientSocket.close();
     }
+
 /*
     public void testPostRequestChunked() throws Exception {
         // TODO - implement testing of chunked post request
     }
-*/    
+*/
+
+    public void testStatus() throws Exception {
+        URL url = new URL("http", "localhost", HTTP_SERVER_PORT, "/");
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.addRequestProperty("X-ResponseStatus", "302 Temporary Redirect");
+        conn.connect();
+        assertEquals(302, conn.getResponseCode());
+        assertEquals("Temporary Redirect", conn.getResponseMessage());
+    }
+
+    public void testQueryStatus() throws Exception {
+        URL url = new URI("http",null,"localhost",HTTP_SERVER_PORT,"/path","status=303 See Other",null).toURL();
+        System.err.println(url);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.connect();
+        assertEquals(303, conn.getResponseCode());
+        assertEquals("See Other", conn.getResponseMessage());
+    }
+
+    public void testQueryRedirect() throws Exception {
+        URL url = new URI("http",null,"localhost",HTTP_SERVER_PORT,"/path","redirect=/a/b/c/d?q",null).toURL();
+        System.err.println(url);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setInstanceFollowRedirects(false);
+        conn.connect();
+        assertEquals(302, conn.getResponseCode());
+        assertEquals("Temporary Redirect", conn.getResponseMessage());
+        assertEquals("/a/b/c/d?q",conn.getHeaderField("Location"));
+    }
+
+    public void testHeaders() throws Exception {
+        URL url = new URL("http", "localhost", HTTP_SERVER_PORT, "/");
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.addRequestProperty("X-SetHeaders", "Location: /abcd|X-Dummy: none");
+        conn.connect();
+        assertEquals(200, conn.getResponseCode());
+        assertEquals("OK", conn.getResponseMessage());
+        assertEquals("/abcd",conn.getHeaderField("Location"));
+        assertEquals("none",conn.getHeaderField("X-Dummy"));
+    }
+
+    public void testResponseLength() throws Exception {
+        URL url = new URL("http", "localhost", HTTP_SERVER_PORT, "/");
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.addRequestProperty("X-ResponseLength", "10");
+        conn.connect();
+        final InputStream inputStream = conn.getInputStream();
+        assertEquals(10, IOUtils.toByteArray(inputStream).length);
+        inputStream.close();
+    }
+
+    public void testCookie() throws Exception {
+        URL url = new URL("http", "localhost", HTTP_SERVER_PORT, "/");
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.addRequestProperty("X-SetCookie", "four=2*2");
+        conn.connect();
+        assertEquals("four=2*2",conn.getHeaderField("Set-Cookie"));
+    }
+
+    public void testSleep() throws Exception {
+        URL url = new URL("http", "localhost", HTTP_SERVER_PORT, "/");
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.addRequestProperty("X-Sleep", "1000");
+        conn.connect();
+        long now = System.currentTimeMillis();
+        final InputStream inputStream = conn.getInputStream();
+        while(inputStream.read() != -1) {}
+        inputStream.close();
+        final long elapsed = System.currentTimeMillis() - now;
+        assertTrue("Expected > 1000 " + elapsed, elapsed >= 1000);
+    }
 
     /**
      * Check that the the two byte arrays have identical content
-     * 
+     *
      * @param expected
      * @param actual
-     * @throws UnsupportedEncodingException 
+     * @throws UnsupportedEncodingException
      */
     private void checkArraysHaveSameContent(byte[] expected, byte[] actual) throws UnsupportedEncodingException {
         if(expected != null && actual != null) {
@@ -369,7 +442,7 @@ public class TestHTTPMirrorThread extends TestCase {
                             System.out.print(actual[j] + " ");
                         }
                         System.out.println();
-*/                      
+*/
                         fail("byte at position " + i + " is different, expected is " + expected[i] + ", actual is " + actual[i]);
                     }
                 }
@@ -379,7 +452,7 @@ public class TestHTTPMirrorThread extends TestCase {
             fail("expected or actual byte arrays were null");
         }
     }
-    
+
     private byte[] getMirroredResponse(byte[] allResponse) {
         // The response includes the headers from the mirror server,
         // we want to skip those, to only keep the content mirrored.
@@ -392,8 +465,8 @@ public class TestHTTPMirrorThread extends TestCase {
                 break;
             }
         }
-        byte[] mirrorResponse = new byte[allResponse.length - startOfMirrorResponse]; 
+        byte[] mirrorResponse = new byte[allResponse.length - startOfMirrorResponse];
         System.arraycopy(allResponse, startOfMirrorResponse, mirrorResponse, 0, mirrorResponse.length);
-        return mirrorResponse;      
+        return mirrorResponse;
     }
 }
